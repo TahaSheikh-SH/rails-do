@@ -3,7 +3,7 @@ name: rails-do
 description: Implements Ruby on Rails code changes from Jira tickets, issue writeups, bug reports, and surrounding repository context using a pragmatic, domain-driven house style. Use when the user provides a Jira ticket, acceptance criteria, or implementation context and wants Rails code, refactors, patches, or tests. It is not intended for sprint planning, ticket triage, status updates, or non-Rails coding tasks.
 metadata:
   author: user-customized
-  version: 2.0.0
+  version: 2.1.0
   style-guide: definitive-code-writing-guide
 ---
 
@@ -15,7 +15,7 @@ metadata:
 
 **Before doing anything:** confirm this ticket has an approved spec stub (see Spec stub section) — draft one first if it doesn't.
 
-A Stop hook (`.claude/hooks/verify_before_stop.py`) mechanically blocks turn-end if standardrb or the mapped rspec fails, for any layer with a 1:1 file-to-spec convention. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran.
+A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if standardrb or the mapped rspec fails, for any layer with a 1:1 file-to-spec convention. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
 
 **Never:**
 - Run bare `rspec` — always `SKIP_COVERAGE=1 bundle exec rspec <specific_file>`
@@ -387,14 +387,16 @@ Run this when a ticket touches 5 or more of the stages listed in Dispatch order 
    1. Write or update the spec
    2. `SKIP_COVERAGE=1 bundle exec rspec <spec_file>`
    3. **Paste the rspec output into your response** — the gate passes only when the output is visible and shows an assertion failure (not a load error)
-   4. **Gate: do not write implementation code until failure output appears in the response**
+   4. Append `<spec_file>` to `.rails-do/<ticket-key>/tdd-red-expected` (one path per line, create if missing) — tells the Stop hook this failure is intentional, not a stop-worthy problem
+   5. **Gate: do not write implementation code until failure output appears in the response**
 
    **Green — minimum change to pass:**
    1. Write the smallest implementation that makes the spec pass
    2. `SKIP_COVERAGE=1 bundle exec rspec <spec_file>`
    3. **Paste the rspec output into your response** — the gate passes only when output shows all examples passing
-   4. **Gate: do not advance until passing output appears in the response**
-   5. Stop — do not add more than what makes it green
+   4. Remove `<spec_file>` from `.rails-do/<ticket-key>/tdd-red-expected` if present — the Stop hook resumes enforcing it
+   5. **Gate: do not advance until passing output appears in the response**
+   6. Stop — do not add more than what makes it green
 
    **Refactor — clean while green:**
    1. Improve naming, structure, or clarity

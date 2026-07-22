@@ -1,6 +1,6 @@
 {
   "name": "rails-do",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Implements Ruby on Rails code changes from Jira tickets and issue writeups using a pragmatic, domain-driven house style, with spec-driven development, TDD hard gates, and dependency-ordered subagent dispatch.",
   "author": {
     "name": "Taha Sheikh"

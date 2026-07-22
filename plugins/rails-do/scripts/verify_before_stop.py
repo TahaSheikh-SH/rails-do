@@ -13,6 +13,12 @@ Those layers still rely on the rails-do skill's own manual gates.
 Backs off after MAX_RETRIES consecutive blocks in the same session so a
 genuinely stuck fix can't loop forever without a human looking at it.
 
+TDD Red phase means a spec is *supposed* to fail — blocking on that would
+fight the workflow instead of enforcing it. Any spec path listed in a
+.rails-do/<ticket-key>/tdd-red-expected file (one path per line, written
+by the skill's Red step and cleared at Green) is excluded from the pass
+requirement here. Everything else still enforces normally.
+
 Known limitation: the git-status scan is repo-wide, not ticket-scoped.
 Unrelated uncommitted Ruby files from other work get linted/tested too
 and can block on a failure that has nothing to do with the ticket in
@@ -69,6 +75,19 @@ def mapped_spec(path):
     return None
 
 
+def expected_red_specs(root):
+    expected = set()
+    rails_do_dir = os.path.join(root, ".rails-do")
+    if not os.path.isdir(rails_do_dir):
+        return expected
+    for ticket in os.listdir(rails_do_dir):
+        marker = os.path.join(rails_do_dir, ticket, "tdd-red-expected")
+        if os.path.isfile(marker):
+            with open(marker) as fh:
+                expected.update(line.strip() for line in fh if line.strip())
+    return expected
+
+
 def counter_file(session_id):
     os.makedirs(COUNTER_DIR, exist_ok=True)
     return os.path.join(COUNTER_DIR, f"{session_id}.count")
@@ -108,11 +127,14 @@ def main():
         else:
             missing_specs.append((f, spec))
 
+    expected_red = expected_red_specs(root)
+    enforced_specs = spec_files - expected_red
+
     test_result = None
-    if spec_files:
+    if enforced_specs:
         test_result = sh(
             ["env", "SKIP_COVERAGE=1", "bundle", "exec", "rspec",
-             *sorted(spec_files), "--format", "progress"],
+             *sorted(enforced_specs), "--format", "progress"],
             root,
         )
 
