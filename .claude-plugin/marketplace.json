@@ -1,0 +1,15 @@
+{
+  "name": "rails-do",
+  "description": "Personal marketplace for the rails-do Claude Code plugin: spec-driven Rails implementation with TDD hard gates and subagent dispatch.",
+  "owner": {
+    "name": "Taha Sheikh"
+  },
+  "plugins": [
+    {
+      "name": "rails-do",
+      "source": "./plugins/rails-do",
+      "description": "Spec-driven Ruby on Rails implementation workflow with TDD hard gates and subagent dispatch.",
+      "version": "2.0.0"
+    }
+  ]
+}

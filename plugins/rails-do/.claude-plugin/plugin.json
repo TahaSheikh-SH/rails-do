@@ -1,0 +1,22 @@
+{
+  "name": "rails-do",
+  "version": "2.0.0",
+  "description": "Implements Ruby on Rails code changes from Jira tickets and issue writeups using a pragmatic, domain-driven house style, with spec-driven development, TDD hard gates, and dependency-ordered subagent dispatch.",
+  "author": {
+    "name": "Taha Sheikh"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/verify_before_stop.py",
+            "timeout": 180
+          }
+        ]
+      }
+    ]
+  }
+}
