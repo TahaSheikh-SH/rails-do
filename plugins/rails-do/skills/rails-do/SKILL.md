@@ -177,7 +177,7 @@ Every reference file costs tokens. Load nothing speculatively.
 
 - Load rule files **only** when you are actively building in that area. A migration-only ticket needs `database.md`; it does not need `views.md` or `callbacks.md`.
 - Load `references/style-guide.md` only for cross-cutting design questions, not as a warm-up for every task.
-- Load `references/examples.md` only when a concrete implementation pattern would genuinely unlock the decision; skip it when the pattern is already clear.
+- Load `references/examples.md` only when you need a concrete implementation pattern to decide; skip it when the pattern is already clear.
 - Load `references/style-checklist.md` once, at step 6 — not at the start.
 - Load `references/tdd-checklist.md` only at the Refactor phase or the flaky-spec gate — not before.
 - For pure formatting / linting tasks (no logic change), skip all rule files. Run `bundle exec standardrb --format progress` and present the diff. Do not load architecture or model rules.

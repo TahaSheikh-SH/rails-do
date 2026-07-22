@@ -30,7 +30,7 @@ claude plugin marketplace add https://github.com/TahaSheikh-SH/rails-do
 claude plugin install rails-do@rails-do
 ```
 
-Both forms are confirmed working (tested against this exact repo). If the skill or hook doesn't show up in a session that was already running, run `/reload-plugins` or restart — a fresh install applies immediately in a new session, but `claude plugin update` explicitly requires a restart, and a running session may need the same nudge.
+If the skill or hook doesn't show up in a session that was already running, run `/reload-plugins` or restart.
 
 Verify the install landed correctly with `claude plugin details rails-do@rails-do` — it should show `Skills (1) rails-do` and `Hooks (1) Stop`.
 
