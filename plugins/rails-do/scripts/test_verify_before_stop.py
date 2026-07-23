@@ -517,7 +517,7 @@ class RunIntegrationTests(unittest.TestCase):
              patch("sys.stderr", new_callable=io.StringIO) as fake_err:
             result = vbs.run(self._payload())
             self.assertEqual(result, 2)
-            self.assertIn("needs your input", fake_err.getvalue())
+            self.assertIn("ambiguous", fake_err.getvalue())
             self.assertIn("No rspec or minitest helper", fake_err.getvalue())
 
     def test_override_file_resolves_ambiguity_without_blocking(self):

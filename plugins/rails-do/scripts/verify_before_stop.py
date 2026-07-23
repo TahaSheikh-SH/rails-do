@@ -410,7 +410,7 @@ def run(payload):
         parts.append("tests:\n" + test_result.stdout[-2000:])
     if toolchain.questions:
         parts.append(
-            "Toolchain detection needs your input before this can be enforced:\n"
+            "Toolchain detection is ambiguous:\n"
             + "\n".join(f"  - {q}" for q in toolchain.questions)
             + "\nAsk the user, then record the answer in .rails-do/toolchain-override "
               "(one \"key: value\" line per answer) before re-running."
