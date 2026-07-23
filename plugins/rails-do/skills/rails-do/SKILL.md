@@ -15,14 +15,14 @@ metadata:
 
 **Before doing anything:** confirm this ticket has an approved spec stub (see Spec stub section) — draft one first if it doesn't.
 
-A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if standardrb or the mapped rspec fails, for any layer with a 1:1 file-to-spec convention. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
+A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if the repo's detected lint command or mapped test command fails, for any layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. If detection is genuinely ambiguous, the hook blocks with a question instead of guessing — when that happens, ask the user which tool this repo uses, then write the answer to `.rails-do/toolchain-override` (one `key: value` line — `lint`, `test`, or `coverage_skip`; `none` is a valid answer) so the same question isn't asked again. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
 
 **Never:**
-- Run bare `rspec` — always `SKIP_COVERAGE=1 bundle exec rspec <specific_file>`
+- Run the test command with no file scope — always target `<specific_file>` explicitly, using the repo's detected test command and its coverage-skip convention (if any was detected)
 - Write implementation code before seeing a spec fail for the right reason (assertion failure, not a load error)
 - Advance from Red to Green until spec output shows an assertion failure
 - Advance from Green to Refactor until spec output shows all passing
-- Claim completion without showing actual output of both standardrb and rspec
+- Claim completion without showing actual output of both the repo's detected lint command and detected test command
 - Commit or push without explicit user approval
 - Pass more than `goal_hint + acceptance_criteria + rails_rules + task` to a subagent
 - Edit `db/schema.rb` directly
@@ -41,7 +41,7 @@ schema:               {
                         "files_changed": ["string"],
                         "test_results": {
                           "status": "pass | fail",
-                          "output": "rspec output snippet (≤20 lines, or the full failure/diff block if longer)"
+                          "output": "test output snippet (≤20 lines, or the full failure/diff block if longer)"
                         },
                         "blockers": "string (describe blocker, or 'none')"
                       }
@@ -71,14 +71,20 @@ task:                 "Add deactivate method to app/models/covered_life.rb"
 Pass schema: { files_changed, test_results: { status, output }, blockers }
 ```
 
-**Verification agent contracts** (verify-agent, completeness-critic-agent — same "nothing else" rule applies):
+**Verification agent contract** (review-agent — same "nothing else" rule applies):
 ```
-verify-agent:              { acceptance_criteria, files_changed, standardrb_and_rspec_output }
-returns:                   { "verdict": "pass | fail", "failed_criteria": ["string"] }
-
-completeness-critic-agent: { acceptance_criteria, files_changed }
-returns:                   { "verdict": "pass | gaps_found", "gaps": ["string"] }
+review-agent:  { acceptance_criteria, grounding, files_changed, lint_and_test_output }
+returns:       {
+                 "verdict": "pass | fail | issues_found",
+                 "failed_criteria": ["string"],
+                 "gaps": ["string"],
+                 "excess_comments": ["string"],
+                 "excess_scope": ["string"]
+               }
 ```
+`failed_criteria` non-empty → `fail`, regardless of the other fields. Otherwise any of `gaps` /
+`excess_comments` / `excess_scope` non-empty → `issues_found`. All four empty → `pass`. Gate on
+`failed_criteria.length === 0`, never on the `verdict` string alone.
 
 ## House rules
 
@@ -180,7 +186,7 @@ Every reference file costs tokens. Load nothing speculatively.
 - Load `references/examples.md` only when you need a concrete implementation pattern to decide; skip it when the pattern is already clear.
 - Load `references/style-checklist.md` once, at step 6 — not at the start.
 - Load `references/tdd-checklist.md` only at the Refactor phase or the flaky-spec gate — not before.
-- For pure formatting / linting tasks (no logic change), skip all rule files. Run `bundle exec standardrb --format progress` and present the diff. Do not load architecture or model rules.
+- For pure formatting / linting tasks (no logic change), skip all rule files. Run the repo's detected lint command and present the diff. Do not load architecture or model rules.
 - When dispatching subagents (see below), each agent loads only its own relevant rules, not the full set.
 
 All rule files live at `references/rules/<name>.md`. Load only what you are actively building in — each file costs tokens.
@@ -326,8 +332,7 @@ migrations → models → services → query objects → policies → controller
 | query-object-agent | Complex query objects in `app/queries/` + their specs | `models.md`, `testing.md` |
 | mailer-agent | ActionMailer mailers + their specs | `testing.md` |
 | rspec-agent | Cross-cutting integration specs only (not layer specs — each specialist owns those) | `testing.md` |
-| verify-agent | Adversarially checks acceptance_criteria against the implementation. Spawned once per phase after implementation completes — full contract in "How to dispatch" below. | `testing.md` |
-| completeness-critic-agent | Checks for gaps (missing tests, error paths, edge cases, auth) after verify-agent passes — full contract in "How to dispatch" below. | `testing.md` |
+| review-agent | Adversarially checks acceptance_criteria (blocking), gaps, and excess/simplicity (advisory) against the implementation. Spawned once per ticket, after all phases complete — not after each one individually — including inline tickets under the 3-layer threshold, not just dispatched ones. Full contract in "How to dispatch" below. | `testing.md` |
 
 **Project CLAUDE.md — load alongside rule files:**
 Each specialist must also read the project's nested CLAUDE.md for its layer before implementing:
@@ -344,17 +349,17 @@ Each specialist must also read the project's nested CLAUDE.md for its layer befo
 1. Restate the ticket in domain language (brief).
 2. Identify which specialists are needed (see roles table above).
 3. For each specialist, call the **Agent tool** with the subagent contract as the prompt. Feed the previous layer's output only when the task requires it (e.g., migration output feeds model context).
-4. Run `bundle exec standardrb --format progress` and `SKIP_COVERAGE=1 bundle exec rspec <all changed spec files>` and paste both outputs — verify-agent's verdict is checked against this, so it must be current before dispatching verify-agent.
-5. Dispatch a verify-agent with the acceptance_criteria from the ticket, the files_changed list from the implementation agents, and the output from step 4. Gate completion on `verdict === "pass"`.
+4. Run the repo's detected lint command and detected test command (with its coverage-skip convention, if any) against all changed spec files, and paste both outputs — review-agent's verdict is checked against this, so it must be current before dispatching review-agent.
+5. Dispatch one `review-agent`, once per ticket — after every specialist phase in this dispatch chain has completed, not after each one individually — with the current spec.md Layer 1 (post-Amendment) as `acceptance_criteria`, spec.md Layer 2 as `grounding`, the `files_changed` list from every implementation agent in the chain, and the output from step 4 as `lint_and_test_output`. Gate completion on `failed_criteria.length === 0`, not on the `verdict` string.
 
-   **If verify-agent returns `verdict: "fail"`:**
+   **If `failed_criteria` is non-empty (`verdict: "fail"`):**
    1. Surface `failed_criteria` to the user
-   2. Fix the implementation for each failed criterion
-   3. Re-run step 4, then re-dispatch verify-agent with the same `acceptance_criteria` and updated `files_changed`
+   2. For each failed criterion, re-dispatch a fresh-context fix to the specialist role that owns the layer it traces to, passing `failed_criteria` and that file's current contents — not the original transcript, which may already be gone past the Compaction checkpoint — and re-check any later-layer code built against what changed
+   3. Re-run step 4, then re-dispatch `review-agent` with the same `acceptance_criteria` and updated `files_changed`
    Maximum 2 retry cycles — capped lower than the Stop hook's 3, because each cycle here means changing code, not just re-running a check. On the 3rd failure, escalate as a blocker:
-   > **Blocked — verify-agent:** [list failed_criteria] / [file:line where each assertion fails, from rspec output] / [what was attempted in each retry cycle] / [needs user decision]
+   > **Blocked — review-agent:** [list failed_criteria] / [file:line where each assertion fails, from test output] / [what was attempted in each retry cycle] / [needs user decision]
 
-   **When verify-agent returns `verdict: "pass"`:** dispatch completeness-critic-agent. If it returns `verdict: "gaps_found"`, surface `gaps` to the user as advisory items before proceeding to the completion gate.
+   **When `failed_criteria` is empty:** surface `gaps` and `excess_scope` to the user as advisory items before proceeding to the completion gate — silence on these means proceeding with the finding accepted as-is. Remove any `excess_comments` findings from the diff first — no separate approval needed; they surface in the pre-commit `git diff --cached` review like any other change.
 
 **If subagents aren't available:** implement in a single linear pass in the same dependency order. Load only the rule files for the layer you're actively writing — not all at once.
 
@@ -366,7 +371,7 @@ Run this when a ticket touches 5 or more of the stages listed in Dispatch order 
 2. Ask:
    > "This ticket spans [N] layers and will dispatch [N] agents. Proceed with full depth, or focus on [highest-risk layer]?"
 3. If the user says proceed, or a `+Nk` directive is present, dispatch normally.
-4. **Budget-aware default (no `+Nk` directive, user says proceed without specifying depth):** Cap at the 3 highest-risk layers. If Required parallel pairs (Subagent dispatch, above) calls for two of those layers together, both count as one pair — never split a mandatory pair to fit the cap. rspec-agent, verify-agent, and completeness-critic-agent run regardless and aren't part of this count. State which layers were sampled and which were skipped. The user can re-invoke with a `+Nk` directive to lift the cap.
+4. **Budget-aware default (no `+Nk` directive, user says proceed without specifying depth):** Cap at the 3 highest-risk layers. If Required parallel pairs (Subagent dispatch, above) calls for two of those layers together, both count as one pair — never split a mandatory pair to fit the cap. rspec-agent and review-agent run regardless and aren't part of this count. State which layers were sampled and which were skipped. The user can re-invoke with a `+Nk` directive to lift the cap.
 
 ## Implementation workflow
 1. Restate the ticket in domain language. Confirm it matches the approved spec stub's Layer 1 — if it doesn't, stop and log an Amendment (see Spec stub → Amendment rule) before continuing. Refresh the stub's Grounding layer as facts change; no approval needed for that layer.
@@ -385,23 +390,23 @@ Run this when a ticket touches 5 or more of the stages listed in Dispatch order 
 
    **Red — write the failing spec first:**
    1. Write or update the spec
-   2. `SKIP_COVERAGE=1 bundle exec rspec <spec_file>`
-   3. **Paste the rspec output into your response** — the gate passes only when the output is visible and shows an assertion failure (not a load error)
+   2. Run the repo's detected test command against `<spec_file>` (with its detected coverage-skip convention applied automatically)
+   3. **Paste the test output into your response** — the gate passes only when the output is visible and shows an assertion failure (not a load error)
    4. Append `<spec_file>` to `.rails-do/<ticket-key>/tdd-red-expected` (one path per line, create if missing) — tells the Stop hook this failure is intentional, not a stop-worthy problem
    5. **Gate: do not write implementation code until failure output appears in the response**
 
    **Green — minimum change to pass:**
    1. Write the smallest implementation that makes the spec pass
-   2. `SKIP_COVERAGE=1 bundle exec rspec <spec_file>`
-   3. **Paste the rspec output into your response** — the gate passes only when output shows all examples passing
+   2. Run the repo's detected test command against `<spec_file>` (with its detected coverage-skip convention applied automatically)
+   3. **Paste the test output into your response** — the gate passes only when output shows all examples passing
    4. Remove `<spec_file>` from `.rails-do/<ticket-key>/tdd-red-expected` if present — the Stop hook resumes enforcing it
    5. **Gate: do not advance until passing output appears in the response**
    6. Stop — do not add more than what makes it green
 
    **Refactor — clean while green:**
    1. Improve naming, structure, or clarity
-   2. `SKIP_COVERAGE=1 bundle exec rspec <spec_file>` after each change
-   3. **Paste the rspec output after each change** — revert immediately if any example goes red
+   2. Run the repo's detected test command against `<spec_file>` (with its detected coverage-skip convention applied automatically) after each change
+   3. **Paste the test output after each change** — revert immediately if any example goes red
    4. **Gate: must stay green throughout — revert and retry if it goes red**
 
    **WRONG** — never do this:
@@ -411,8 +416,8 @@ Run this when a ticket touches 5 or more of the stages listed in Dispatch order 
 
    **CORRECT:**
    ```
-   Write spec → SKIP_COVERAGE=1 bundle exec rspec → see failure → write minimum code →
-   SKIP_COVERAGE=1 bundle exec rspec → see passing → refactor → still passing
+   Write spec → run the repo's detected test command → see failure → write minimum code →
+   run the repo's detected test command → see passing → refactor → still passing
    ```
 
    **Refactoring rules (do not skip these):**
@@ -424,15 +429,17 @@ Run this when a ticket touches 5 or more of the stages listed in Dispatch order 
    Refactor-trigger list, matching refactoring moves, and the flaky-spec gate checklist are in `references/tdd-checklist.md` — read it now; this step isn't done until the flaky-spec gate there has been checked.
 
 6. Review the result against `references/style-checklist.md`. Before presenting work as complete, run what the repo uses:
-   - **Style:** `bundle exec standardrb --format progress`
-   - **Tests:** `bundle exec rspec <changed_spec_files>` — prefix with `SKIP_COVERAGE=1` if this repo uses that env var.
+   - **Style:** the repo's detected lint command (standardrb or rubocop — same detection the Stop hook uses).
+   - **Tests:** the repo's detected test command against `<changed_spec_files>`, with its detected coverage-skip convention applied if one was found.
    - **Security:** `bundle exec brakeman --no-pager` if brakeman is present; skip otherwise.
    Report failures inline. Only block completion for checks that the repo's CI pipeline enforces — flag others as follow-up nits.
 
+   **If this ticket was under the 3-layer dispatch threshold (implemented inline, no specialist dispatch):** dispatch `review-agent` here — this is the only adversarial check these tickets get, since "Subagent dispatch" → "How to dispatch" only covers dispatched tickets. Same contract, same gate: `failed_criteria.length === 0` before continuing, `gaps`/`excess_scope` surfaced advisory, `excess_comments` removed from the diff before it's shown.
+
    **Completion gate — a phase is done only when both outputs are pasted into the response:**
    ```bash
-   bundle exec standardrb --format progress
-   SKIP_COVERAGE=1 bundle exec rspec <the_spec_file_changed>
+   <detected lint command>
+   <detected test command> <the_spec_file_changed>
    ```
 
    **WRONG** — never do this:
@@ -444,7 +451,7 @@ Run this when a ticket touches 5 or more of the stages listed in Dispatch order 
    ```
    $ bundle exec standardrb --format progress
    .....
-   $ SKIP_COVERAGE=1 bundle exec rspec spec/models/covered_life_spec.rb
+   $ bundle exec rspec spec/models/covered_life_spec.rb
    3 examples, 0 failures
    ```
 
@@ -493,7 +500,7 @@ Surface to the user immediately — do not guess past a blocker — when:
 - The plan contradicts what the code actually is
 - A file or method that should exist does not
 
-(Repeated verification failure has its own format — see "How to dispatch" → verify-agent's 3rd-failure escalation, above.)
+(Repeated verification failure has its own format — see "How to dispatch" → review-agent's 3rd-failure escalation, above.)
 
 Format:
 > **Blocked — Phase [N]:** [what was attempted] / [what failed] / [what is needed to proceed]
@@ -510,8 +517,9 @@ Failures present both before and after stash are pre-existing noise — not ours
 
 ### Pre-flight before claiming any phase done
 
-- [ ] Targeted rspec output shown and green
-- [ ] standardrb output shown and clean
+- [ ] Targeted test output shown and green (repo's detected test command)
+- [ ] Lint output shown and clean (repo's detected lint command)
 - [ ] No new flaky spec patterns (checked against `references/tdd-checklist.md`)
+- [ ] review-agent dispatched with `failed_criteria` empty, `gaps`/`excess_scope` surfaced if present — only on the ticket's final phase (or its single phase, if implemented inline), not every intermediate phase
 - [ ] If any GraphQL files changed: `bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops` run and schema files staged
 - [ ] If proposing a commit: diff shown, message proposed, user has said YES

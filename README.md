@@ -5,13 +5,13 @@ A Claude Code plugin that implements Ruby on Rails changes from a ticket, issue 
 ## What it does
 
 - Drafts a two-layer spec stub (Intent + Grounding) before any code, with an amendment rule so scope changes never silently overwrite the approved intent.
-- Enforces Red -> Green -> Refactor with hard gates: no implementation before a failing spec, no advancing without pasted rspec/standardrb output.
+- Enforces Red -> Green -> Refactor with hard gates: no implementation before a failing spec, no advancing without pasted lint/test output.
 - Dispatches specialist subagents in dependency order (migrations -> models -> services -> ... -> views) once a ticket crosses a 3-layer threshold, with a scope gate for anything larger.
-- Ships a Stop hook that mechanically blocks turn-end if standardrb or the mapped rspec fails, for any Rails layer with a 1:1 file-to-spec convention (models, services, jobs, policies, and others — see [`SKILL.md`](plugins/rails-do/skills/rails-do/SKILL.md) for the full list). Controllers, GraphQL, views, and migrations aren't covered by the hook and rely on the workflow's own manual gates instead. The hook won't block on a spec you've deliberately left failing mid-TDD-Red — see the `tdd-red-expected` marker in the SKILL.md TDD section.
+- Ships a Stop hook that mechanically blocks turn-end if the repo's lint or mapped test command fails, for any Rails layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. When detection is genuinely ambiguous (not "no such tool," but "can't tell which one"), the hook blocks and asks a question instead of guessing; the answer gets written to `.rails-do/toolchain-override` so it's only asked once per repo. A repo whose spec layout doesn't mirror app layers 1:1 gets a non-blocking informational note instead, since there's no question to ask there. Controllers, GraphQL, views, and migrations aren't covered by the hook and rely on the workflow's own manual gates instead. The hook won't block on a spec you've deliberately left failing mid-TDD-Red — see the `tdd-red-expected` marker in the SKILL.md TDD section.
 
 ## Prerequisites
 
-- A Ruby on Rails app using `bundle exec standardrb` for linting and `bundle exec rspec` for tests (the hook and workflow both assume `SKIP_COVERAGE=1` is meaningful in this repo — harmless if it isn't).
+- A Ruby on Rails app. The Stop hook auto-detects standardrb vs rubocop, rspec vs minitest, and a SimpleCov coverage-skip convention if one exists — no config needed. If detection can't confidently resolve a choice, the hook blocks once and asks which one this repo uses; the answer persists in `.rails-do/toolchain-override` so it isn't asked again.
 - Claude Code with plugin support.
 
 ## Install
