@@ -191,7 +191,7 @@ def detect_coverage_skip(root, questions, override):
             return (value, "1")
         # Unrecognized override value - ignore it and fall through to detection/asking again.
 
-    for rel in ("spec/rails_helper.rb", "spec/spec_helper.rb", "test/test_helper.rb"):
+    for rel in (".simplecov", "spec/rails_helper.rb", "spec/spec_helper.rb", "test/test_helper.rb"):
         text = _read_text(os.path.join(root, rel))
         if text is None:
             continue
