@@ -17,6 +17,17 @@ metadata:
 
 A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if the repo's detected lint command or mapped test command fails, for any layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. If detection is genuinely ambiguous, the hook blocks with a question instead of guessing — when that happens, ask the user which tool this repo uses, then write the answer to `.rails-do/toolchain-override` (one `key: value` line — `lint`, `test`, or `coverage_skip`; `none` is a valid answer) so the same question isn't asked again. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
 
+**Always allowed (no approval needed):**
+- Reading code, grepping, running `git status` / `git diff`
+- Running the repo's detected lint or test command, scoped to a specific file
+- Drafting or updating the spec stub, including its inline research budget (Spec stub → Drafting)
+- Writing to `.rails-do/` working files (spec stub, `tdd-red-expected` markers, `toolchain-override`)
+
+**Ask first:**
+- Touching files outside the approved spec stub's stated scope
+- Adding a new gem dependency
+- Changing CI/CD configuration
+
 **Never:**
 - Run the test command with no file scope — always target `<specific_file>` explicitly, using the repo's detected test command and its coverage-skip convention (if any was detected)
 - Write implementation code before seeing a spec fail for the right reason (assertion failure, not a load error)
@@ -188,6 +199,7 @@ Every reference file costs tokens. Load nothing speculatively.
 - Load `references/tdd-checklist.md` only at the Refactor phase or the flaky-spec gate — not before.
 - For pure formatting / linting tasks (no logic change), skip all rule files. Run the repo's detected lint command and present the diff. Do not load architecture or model rules.
 - When dispatching subagents (see below), each agent loads only its own relevant rules, not the full set.
+- Once a subagent's output has been consumed — folded into `files_changed`, the next agent's input, or review-agent's grounding — treat its full transcript as safe to drop. This applies at every phase and ticket size, not only the Full-feature midpoint (Subagent dispatch → Compaction checkpoint, below).
 
 All rule files live at `references/rules/<name>.md`. Load only what you are actively building in — each file costs tokens.
 
