@@ -574,6 +574,19 @@ class RunIntegrationTests(unittest.TestCase):
         ):
             self.assertEqual(vbs.run(self._payload()), 0)
 
+    def test_support_file_in_spec_dir_is_not_run_as_a_spec(self):
+        # spec/factories/*.rb relies on rails_helper already being loaded and
+        # errors with "uninitialized constant FactoryBot" if rspec is pointed
+        # at it directly. Treating any spec/**.rb as a runnable spec falsely
+        # blocks turn-end on a correct factory file every time.
+        self._rspec_repo()
+        self._write("spec/factories/foo.rb", "FactoryBot.define { factory(:foo) {} }\n")
+        with patch.object(
+            vbs, "sh",
+            make_fake_sh(["?? spec/factories/foo.rb"], test_ok=False),
+        ):
+            self.assertEqual(vbs.run(self._payload()), 0)
+
     def test_malformed_tdd_red_expected_does_not_crash(self):
         self._rspec_repo()
         self._write("app/models/foo.rb", "class Foo\nend\n")

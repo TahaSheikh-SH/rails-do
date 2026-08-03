@@ -343,9 +343,10 @@ def run(payload):
     missing_specs = []
     if toolchain.test is not None:
         test_root = "spec" if toolchain.test == "rspec" else "test"
+        suffix = "_spec.rb" if toolchain.test == "rspec" else "_test.rb"
         for f in changed:
             if f.startswith(f"{test_root}/"):
-                if os.path.isfile(os.path.join(root, f)):
+                if f.endswith(suffix) and os.path.isfile(os.path.join(root, f)):
                     spec_files.add(f)
                 continue
             spec = mapped_spec_or_test(f, toolchain, root)
