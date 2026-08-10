@@ -30,6 +30,15 @@ answer — lint/test/coverage_skip; "none" is a valid answer for any of
 them) so the same question isn't asked again on the next run;
 detect_toolchain() checks that file before running any auto-detection.
 
+Repos with a non-standard spec/test convention (shared specs, specs
+that don't mirror app/ 1:1, etc.) can add "enforce: advisory" or
+"enforce: none" to .rails-do/toolchain-override — same file, same
+"key: value" format as the toolchain answers above. "advisory" still
+runs lint/test and prints results but never blocks turn-end; "none"
+skips this hook's checks entirely for the repo. Default is "strict"
+(current behavior) when the key is absent or its value isn't one of
+strict/advisory/none.
+
 Known limitations, accepted rather than engineered around:
 - The git-status scan is repo-wide, not ticket-scoped. Unrelated
   uncommitted Ruby files from other work get linted/tested too and can
@@ -232,6 +241,11 @@ def _test_enforcement_could_apply(changed, root):
     return False
 
 
+def enforce_mode(root):
+    value = _read_toolchain_override(root).get("enforce", "strict")
+    return value if value in ("strict", "advisory", "none") else "strict"
+
+
 def detect_toolchain(root, changed):
     override = _read_toolchain_override(root)
     questions = []
@@ -318,15 +332,37 @@ def clear_counter(path):
         os.remove(path)
 
 
+def format_failure_details(lint, missing_specs, test_result, toolchain):
+    parts = []
+    if lint is not None and lint.returncode != 0:
+        parts.append("lint:\n" + lint.stdout[-2000:])
+    if missing_specs:
+        parts.append(
+            "No spec/test file found for changed source (TDD gate):\n"
+            + "\n".join(f"  {src} -> {spec}" for src, spec in missing_specs)
+        )
+    if test_result is not None and test_result.returncode != 0:
+        parts.append("tests:\n" + test_result.stdout[-2000:])
+    if toolchain.questions:
+        parts.append(
+            "Toolchain detection is ambiguous:\n"
+            + "\n".join(f"  - {q}" for q in toolchain.questions)
+            + "\nAsk the user, then record the answer in .rails-do/toolchain-override "
+              "(one \"key: value\" line per answer) before re-running."
+        )
+    return "\n\n".join(parts)
+
+
 def run(payload):
     """Core hook logic. Returns the process exit code; writes messages to stderr."""
     session_id = payload.get("session_id", "unknown")
     cwd = payload.get("cwd", os.getcwd())
     root = repo_root(cwd)
     counter_path = counter_file(session_id)
+    mode = enforce_mode(root)
 
     changed = changed_ruby_files(root)
-    if not changed:
+    if not changed or mode == "none":
         clear_counter(counter_path)
         return 0
 
@@ -383,6 +419,14 @@ def run(payload):
         clear_counter(counter_path)
         return 0
 
+    if mode == "advisory":
+        clear_counter(counter_path)
+        sys.stderr.write(
+            "rails-do stop hook (advisory mode - not blocking):\n\n"
+            + format_failure_details(lint, missing_specs, test_result, toolchain)
+        )
+        return 0
+
     count = 1
     if os.path.exists(counter_path):
         with open(counter_path) as fh:
@@ -399,23 +443,8 @@ def run(payload):
         )
         return 0
 
-    parts = [f"Verification failed before ending this turn (attempt {count}/{MAX_RETRIES}).\n"]
-    if lint is not None and lint.returncode != 0:
-        parts.append("lint:\n" + lint.stdout[-2000:])
-    if missing_specs:
-        parts.append(
-            "No spec/test file found for changed source (TDD gate):\n"
-            + "\n".join(f"  {src} -> {spec}" for src, spec in missing_specs)
-        )
-    if test_result is not None and test_result.returncode != 0:
-        parts.append("tests:\n" + test_result.stdout[-2000:])
-    if toolchain.questions:
-        parts.append(
-            "Toolchain detection is ambiguous:\n"
-            + "\n".join(f"  - {q}" for q in toolchain.questions)
-            + "\nAsk the user, then record the answer in .rails-do/toolchain-override "
-              "(one \"key: value\" line per answer) before re-running."
-        )
+    parts = [f"Verification failed before ending this turn (attempt {count}/{MAX_RETRIES})."]
+    parts.append(format_failure_details(lint, missing_specs, test_result, toolchain))
     parts.append("Fix and re-run before ending the turn.")
     sys.stderr.write("\n\n".join(parts))
     return 2

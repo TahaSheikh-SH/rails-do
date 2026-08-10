@@ -3,7 +3,7 @@ name: rails-do
 description: Implements Ruby on Rails code changes from Jira tickets, issue writeups, bug reports, and surrounding repository context using a pragmatic, domain-driven house style. Use when the user provides a Jira ticket, acceptance criteria, or implementation context and wants Rails code, refactors, patches, or tests. It is not intended for sprint planning, ticket triage, status updates, or non-Rails coding tasks.
 metadata:
   author: user-customized
-  version: 2.1.0
+  version: 2.2.0
   style-guide: definitive-code-writing-guide
 ---
 
@@ -15,7 +15,7 @@ metadata:
 
 **Before doing anything:** confirm this ticket has an approved spec stub (see Spec stub section) — draft one first if it doesn't.
 
-A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if the repo's detected lint command or mapped test command fails, for any layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. If detection is genuinely ambiguous, the hook blocks with a question instead of guessing — when that happens, ask the user which tool this repo uses, then write the answer to `.rails-do/toolchain-override` (one `key: value` line — `lint`, `test`, or `coverage_skip`; `none` is a valid answer) so the same question isn't asked again. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
+A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if the repo's detected lint command or mapped test command fails, for any layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. If detection is genuinely ambiguous, the hook blocks with a question instead of guessing — when that happens, ask the user which tool this repo uses, then write the answer to `.rails-do/toolchain-override` (one `key: value` line — `lint`, `test`, or `coverage_skip`; `none` is a valid answer) so the same question isn't asked again. Repos with a non-standard spec/test convention can add `enforce: advisory` (runs checks, never blocks) or `enforce: none` (skips checks) to the same `.rails-do/toolchain-override` file. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
 
 **Always allowed (no approval needed):**
 - Reading code, grepping, running `git status` / `git diff`
@@ -256,6 +256,7 @@ Out: <bullet>
 - Rule files: <task-type row this ticket maps to, from the loading table above>
 - Test coverage: <spec files already covering this area, or "none found">
 - Layers touched: <migration/model/service/policy/controller/graphql/job/view>
+- Dispatch plan: <inline | dispatch — N layers, in this order: ...> (only for 3+ layers; state before Scope gate runs)
 ```
 Grounding carries facts, not intent — the only layer that updates freely, with no approval, for the life of the ticket. (Layer 1 does not; see Amendment rule.)
 
@@ -377,7 +378,7 @@ Each specialist must also read the project's nested CLAUDE.md for its layer befo
 
 ## Scope gate
 
-Run this when a ticket touches 5 or more of the stages listed in Dispatch order (Subagent dispatch, above) and no `+Nk` token budget directive was given in the session:
+Run this when a ticket touches 3 or more of the stages listed in Dispatch order (Subagent dispatch, above) and no `+Nk` token budget directive was given in the session:
 
 1. Count the distinct layers the ticket touches.
 2. Ask:
