@@ -3,205 +3,135 @@ name: rails-do
 description: Implements Ruby on Rails code changes from Jira tickets, issue writeups, bug reports, and surrounding repository context using a pragmatic, domain-driven house style. Use when the user provides a Jira ticket, acceptance criteria, or implementation context and wants Rails code, refactors, patches, or tests. It is not intended for sprint planning, ticket triage, status updates, or non-Rails coding tasks.
 metadata:
   author: user-customized
-  version: 2.2.0
+  version: 3.0.0
   style-guide: definitive-code-writing-guide
 ---
 
 # Implementing Rails Changes
 
-**Ticket lifecycle:** Spec stub → dispatch decision (Subagent dispatch + Scope gate) → Implementation workflow → Archiving (Implementation workflow step 7).
+## Workflow
+
+1. **Clarify** — ask what would change the implementation, batched, once.
+2. **Plan** — draft `.rails-do/<ticket-key>/spec.md`, get it approved.
+3. **Execute** — work the plan's file list in order; dispatch subagents past the layer threshold.
+4. **Verify** — run lint and tests, paste the output.
 
 ## Hard rules
 
-**Before doing anything:** confirm this ticket has an approved spec stub (see Spec stub section) — draft one first if it doesn't.
+**Before anything:** confirm an approved plan exists (Step 2) — draft one if not.
 
-A Stop hook (bundled with this plugin as `scripts/verify_before_stop.py`) mechanically blocks turn-end if the repo's detected lint command or mapped test command fails, for any layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. If detection is genuinely ambiguous, the hook blocks with a question instead of guessing — when that happens, ask the user which tool this repo uses, then write the answer to `.rails-do/toolchain-override` (one `key: value` line — `lint`, `test`, or `coverage_skip`; `none` is a valid answer) so the same question isn't asked again. Repos with a non-standard spec/test convention can add `enforce: advisory` (runs checks, never blocks) or `enforce: none` (skips checks) to the same `.rails-do/toolchain-override` file. It does not cover controllers, graphql, views, or migrations — the manual gates below are the only enforcement there, and pasting output still matters everywhere else for the user's own visibility into what ran. During TDD Red (below), an intentionally failing spec doesn't block — see the `tdd-red-expected` marker in that step.
+**Always allowed:** reading code, grepping, `git status`/`git diff`; running the repo's detected lint or test command scoped to one file; drafting or updating the plan file.
 
-**Always allowed (no approval needed):**
-- Reading code, grepping, running `git status` / `git diff`
-- Running the repo's detected lint or test command, scoped to a specific file
-- Drafting or updating the spec stub, including its inline research budget (Spec stub → Drafting)
-- Writing to `.rails-do/` working files (spec stub, `tdd-red-expected` markers, `toolchain-override`)
+**Ask first:** touching files outside the plan's stated scope; adding a gem dependency; changing CI/CD config.
 
-**Ask first:**
-- Touching files outside the approved spec stub's stated scope
-- Adding a new gem dependency
-- Changing CI/CD configuration
+**Never:** run the test command with no file scope; write implementation before a spec fails for the right reason (assertion failure, not a load error); claim completion without pasting actual lint and test output; commit or push without explicit user approval; pass a subagent more than `goal_hint + acceptance_criteria + rails_rules + workflow + task`; edit `db/schema.rb` directly; add comments that restate the code.
 
-**Never:**
-- Run the test command with no file scope — always target `<specific_file>` explicitly, using the repo's detected test command and its coverage-skip convention (if any was detected)
-- Write implementation code before seeing a spec fail for the right reason (assertion failure, not a load error)
-- Advance from Red to Green until spec output shows an assertion failure
-- Advance from Green to Refactor until spec output shows all passing
-- Claim completion without showing actual output of both the repo's detected lint command and detected test command
-- Commit or push without explicit user approval
-- Pass more than `goal_hint + acceptance_criteria + rails_rules + task` to a subagent
-- Edit `db/schema.rb` directly
-- Add inline comments that restate what the code does
+## Step 1 — Clarify
 
-## Subagent contract
+Ask the user, once, batched in a single message, only the questions whose
+answers would change the implementation — not ones you can answer by reading
+the repo. Typical: which model owns this behavior, whether to follow or
+replace an existing pattern, what happens in an edge case the ticket doesn't
+mention. If nothing is genuinely ambiguous, say so and go straight to the plan.
 
-Every subagent you mint receives exactly this contract — nothing else:
+## Step 2 — Plan
 
+Every ticket gets a plan file before Step 3 — even a one-line fix. It's cheap to write, and it's where drift gets caught before code does.
+
+**File:** `.rails-do/<ticket-key>/spec.md` (ticket-key = Jira key, else a short slug reused for the ticket's life). Check for an existing matching stub before minting a new key. Add `.rails-do/` to `.gitignore` if missing — working state, not a deliverable.
+
+**Layer 1 — Intent (locked once approved):**
 ```
-goal_hint:            <one sentence — what outcome proves this agent succeeded>
-acceptance_criteria:  <2–4 bullets the verification subagent checks against explicitly>
-rails_rules:          <excerpt from the relevant references/rules/*.md files for the layers this agent touches — consult the Rules Reference table; do not read CLAUDE.md>
-task:                 <one specific, bounded thing to do>
-schema:               {
-                        "files_changed": ["string"],
-                        "test_results": {
-                          "status": "pass | fail",
-                          "output": "test output snippet (≤20 lines, or the full failure/diff block if longer)"
-                        },
-                        "blockers": "string (describe blocker, or 'none')"
-                      }
-                      Pass this object as the schema: option in the Agent tool call.
-                      The tool layer enforces shape — no prose token-limit instruction needed.
+# Spec: <ticket-key> — <one-line title>
+
+## Problem
+<what's broken or missing, and why it matters>
+## Desired behavior
+<what happens after the change>
+## Acceptance criteria
+- <bullet>
+## Scope
+In: <bullet> / Out: <bullet>
+## Constraints
+<perf, security, compatibility, API contract — or "none stated">
+## Files to touch
+<path>: <intent>  (repeat, execution order — Step 3 slices by this)
+## Open questions
+[NEEDS CLARIFICATION: <question>]
+## Amendments
+(none)
 ```
 
-**Orchestrator chaining:** Read `blockers` first — if not `'none'`, surface immediately and stop. Pass `files_changed` from migration-agent as context to model-agent when the model depends on schema additions.
+**Layer 2 — Grounding** (facts, updates freely, no approval): existing pattern (`file:line`), rule files mapped (Rules reference below), test coverage found, layers touched, dispatch plan (3+ layers only).
 
-**Partial failure protocol:** When some subagents succeed and others fail or return incomplete results, do not halt the entire chain. Instead: (1) surface the failed agents' errors with the exact blocker described, (2) proceed with the successful agents' output, (3) note which layers are incomplete in the phase summary. Reserve a full halt for unrecoverable blockers only (schema does not exist, required file is missing, test has a load error not an assertion failure).
+**Drafting:** draft both layers from the ticket text plus inline research — budget 5 greps, 1 file read — before asking anything. Tag gaps as `[NEEDS CLARIFICATION: <question>]`. Show the draft. **Gate:** every tag resolved and Layer 1 explicitly approved — silence isn't approval — before Step 3.
 
-`acceptance_criteria` is derived from the ticket's acceptance criteria or BMAD story. It is what the verification pass checks against — not a restatement of the task.
+**Resume:** plan exists and Layer 1 approved → skip drafting, match `git status`/`git diff` against the file list to find where to resume.
 
-**WRONG** — never do this:
-```
-Deploy subagent with: full plan text + all previous phase output + every CLAUDE.md
-```
+**Amendment rule:** Layer 1 locked once approved, no silent edits. Mid-implementation changes get a dated Amendments entry (what/why/replaces) and the same approval as the original plan. Layer 2 is exempt.
 
-**CORRECT:**
-```
-goal_hint:            "CoveredLife#deactivate returns :ok on valid status transition"
-acceptance_criteria:  - returns :ok symbol on valid transition
-                      - returns :error on invalid status
-                      - spec is green with 0 failures
-rails_rules:          [excerpt from references/rules/models.md]
-task:                 "Add deactivate method to app/models/covered_life.rb"
-Pass schema: { files_changed, test_results: { status, output }, blockers }
-```
+**Voice:** terse, fact-first, no lead-in or filler, bullets over paragraphs.
 
-**Verification agent contract** (review-agent — same "nothing else" rule applies):
+## Step 3 — Execute
+
+Unit of work: a plan slice (one line from the plan's file list), run in the plan's order. Subagents available → one per slice; otherwise work slices in order, single pass.
+
+**Before implementing a slice:** restate the ticket in domain language (brief); grep for an existing analogous pattern to mirror; grep the files you're touching for N+1 risk (`.each` over an AR collection without `includes`/`preload`/`eager_load` — prefer `strict_loading` on Rails 8+, verify with `EXPLAIN ANALYZE`); for real-time or partial-page updates, pick the right Turbo primitive (`references/style-guide.md`).
+
+**Layers** (count these): migration, model, service, policy, controller, graphql, view, job, query-object, mailer. Integration specs and the review pass don't count.
+
+**Dispatch:** 1-2 files, one layer → inline. 3+ layers → dispatch subagents. Full feature → always dispatch.
+
+**Order** (dependency-first): migrations → models → services → query objects → policies → controllers → graphql → jobs → mailers → views + specs.
+
+**Required parallel pairs:** migration-agent → model-agent + rspec-agent together; model-agent → policy-agent + controller-agent together.
+
+**Scope gate** (3+ layers, no `+Nk` directive): ask the user full depth vs. highest-risk layer only. No stated depth → cap at 3 highest-risk layers (never split a required pair); rspec-agent and review-agent always run. State what was sampled/skipped; `+Nk` lifts the cap.
+
+**Subagent contract** — exactly this, nothing else. Orchestrator excerpts everything into the payload; a subagent never reads rule files or project config itself.
 ```
-review-agent:  { acceptance_criteria, grounding, files_changed, lint_and_test_output }
-returns:       {
-                 "verdict": "pass | fail | issues_found",
-                 "failed_criteria": ["string"],
-                 "gaps": ["string"],
-                 "excess_comments": ["string"],
-                 "excess_scope": ["string"]
-               }
+goal_hint:            <one sentence — what proves success>
+acceptance_criteria:  <2-4 bullets, from the plan>
+rails_rules:          <excerpt from references/rules/*.md for this layer>
+workflow:             <TDD Red/Green/Refactor text, pasted in>
+task:                 <one bounded thing to do>
+schema:               { files_changed: [string], test_results: {status, output}, blockers: string }
 ```
-`failed_criteria` non-empty → `fail`, regardless of the other fields. Otherwise any of `gaps` /
-`excess_comments` / `excess_scope` non-empty → `issues_found`. All four empty → `pass`. Gate on
-`failed_criteria.length === 0`, never on the `verdict` string alone.
+Read `blockers` first; not `'none'` → surface and stop. Partial failure (some subagents fail): surface the blocker, keep the rest, note incomplete layers — don't halt the whole chain unless the blocker is unrecoverable.
+
+**Roles → rules to excerpt:** migration `database.md` · model `models.md, callbacks.md, testing.md` · service `models.md, naming.md, testing.md` · policy `policies.md` · controller `controllers.md, testing.md` · graphql `controllers.md, models.md, testing.md, app/graphql/AGENTS.md` · view `views.md, testing.md` · job `performance.md, testing.md` · query-object `models.md, testing.md` · mailer `testing.md` · rspec `testing.md` (cross-cutting specs only) · review `testing.md`.
+
+**TDD per slice:** Red — write/update spec, run, paste output; gate: assertion failure before implementing. Green — smallest change, run, paste output; gate: all passing, then stop. Refactor — improve while green, re-run each change, revert if red. See `references/tdd-checklist.md`.
+
+**review-agent:** once per ticket, after every slice, dispatched or inline alike. `{ acceptance_criteria, grounding, files_changed, lint_and_test_output }` → `{ verdict, failed_criteria, gaps, excess_comments, excess_scope }`. Gate on `failed_criteria.length === 0`. Non-empty: re-dispatch a fix to the owning specialist, re-run lint/test, re-check — max 2 retries, then escalate. Empty: surface `gaps`/`excess_scope` advisory, strip `excess_comments` from the diff first.
+
+**Git rule:** after verification, `git diff --cached`, propose a commit message, wait for user YES — never a subagent running `git commit`.
+
+**Archiving:** once committed, move `.rails-do/<ticket-key>/` to `.rails-do/archive/<ticket-key>/`.
+
+## Step 4 — Verify
+
+Before reporting done: run the repo's lint and test commands for the files
+you changed, paste the output. Either fails → not done. Can't tell which
+commands this repo uses → ask once, note the answer in the plan file.
+
+Also run `bundle exec brakeman --no-pager` if present. GraphQL files changed → regenerate the schema (`bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops`) and stage it. Review against `references/style-checklist.md` before calling it done.
 
 ## House rules
 
-### 1) Favor domain language
-- Name methods, classes, concerns, and variables after real domain concepts.
-- Prefer intent-rich names over generic CRUD or service vocabulary.
-- If the ticket introduces important domain terms, use them consistently across code, tests, and comments.
+Full text: `references/house-rules.md`. Load it when writing code, not when
+planning.
 
-### 2) Prefer rich models and thin controllers
-- Controllers should translate HTTP or params into one or two domain operations.
-- Keep branching, workflow logic, and orchestration out of controllers when the behavior belongs to the domain.
-- Prefer public model APIs that read like English.
+1) Favor domain language · 2) Rich models, thin controllers ·
+3) Model facades over service-first APIs · 4) Concerns for real traits only ·
+5) Lean into Active Record · 6) Callbacks and Current allowed when appropriate ·
+7) Migrations must be safe and reversible · 8) Deny-by-default authorization ·
+9) Background jobs must be idempotent · 10) Abstractions must earn their keep ·
+11) Fractal code quality · 12) Ruby consistency
 
-### 3) Prefer model facades over service-first APIs
+## Rules reference
 
-The preference order is: **concern + PORO subsystem → standalone service** — not the other way around.
-
-**First, try a concern with a delegating PORO subsystem:**
-- Expose a clean domain API via a concern: `account.terminate` via `Account::Closable`.
-- The concern delegates internally to namespaced POROs: `Account::Closing::Purging`, `Account::Closing::Incineration`.
-- The caller never sees the subsystem; the model stays non-fat.
-- Prefer `recording.incinerate` over `Recording::IncinerationService.execute(recording)`.
-
-Before proposing a service, run the decision gate in `references/style-guide.md` ("Vanilla Rails is plenty") — mandatory, not optional. Agents default to services too quickly.
-
-**When a service is justified:**
-- Run the generator first: `rails generate service <name> > /dev/null 2>&1; ls app/services/<name>.rb spec/services/<name>_spec.rb`
-- Name it as a domain noun, not a verb: `Billing::InvoiceIssuance`, not `InvoiceIssuingService`.
-- Do not default to a Result pattern — use it only if the caller needs to distinguish error cases.
-- Do not create interactor, command, or form objects.
-
-### 4) Use concerns only for real traits or roles
-- A concern must represent a genuine has-a or acts-as trait.
-- Model-specific concerns belong under `app/models/model_name/`.
-- Shared cross-model concerns belong under `app/models/concerns/`.
-- Do not use concerns as arbitrary file-splitting containers.
-
-### 5) Lean into Active Record
-- Prefer straightforward Active Record models, associations, scopes, delegated types, STI, and serialized attributes when they fit.
-- Keep persistence and domain logic together when that is the most natural design.
-- Introduce dedicated query objects only when the query is substantial enough to justify encapsulation.
-
-### 6) Callbacks and Current are allowed when appropriate
-- Use callbacks for orthogonal lifecycle concerns, not to hide the primary business workflow.
-- Use Current for request-scoped defaults or audit context when that keeps controllers cleaner.
-- Use suppression patterns only for narrow exceptional cases.
-
-### 7) Migrations must be safe and reversible
-- Every migration must use the reversible `def change` DSL or implement `def down` — never a one-way `def up` without `def down`.
-- Do not mix DDL (schema changes) and data manipulation in the same migration. Large or slow backfills belong in a separate maintenance task. Small, safe data fixes (e.g., populating a newly-added NOT NULL column with a safe default) are acceptable if they complete in milliseconds on any production DB size.
-- Use `disable_ddl_transaction!` when creating indexes concurrently (`algorithm: :concurrently`).
-- Always declare `on_delete:` behavior on foreign key constraints — never leave cascade behavior implicit.
-- Every foreign key column must have an index. Prefer partial indexes when the query has a known condition (e.g., `where: "status = 'active'"`).
-- Composite indexes should order columns from most-selective to least-selective, matching the `WHERE` clause field order.
-
-### 8) Authorization: deny-by-default when Pundit is in use
-When the codebase uses Pundit:
-- Call `authorize` before every controller action that touches a resource.
-- Use `policy_scope(Model)` for index queries — never expose unscoped collections to end users.
-- Policies are per-action — test each policy method and the scope.
-- Never use params or user input as an authorization signal before `authorize` has run.
-- When adding a new action to an existing controller, verify the corresponding policy class covers it.
-
-### 9) Background jobs must be idempotent
-- Design every job to be safe to run twice. Use `find_by` with an early return when the record may have been deleted before the job runs.
-- Declare explicit retry strategy using `retry_on` and `discard_on`. Do not rely on the queue adapter's default retry count.
-- Wrap long-running job logic in `around_perform` with `Timeout::Error` handling where appropriate.
-- Do not enqueue a new job from inside a job unless it is a deliberate cascading pipeline and that intent is clearly named.
-
-### 10) Abstractions must earn their keep
-- Prefer explicit conditionals over clever indirection when there are only a few cases.
-- Inline wrappers that add no meaning.
-- Avoid `method_missing`, clever metaprogramming, or convenience base classes unless the payoff is obvious and real.
-
-A `SimpleDelegator`-based presenter is acceptable as a view-layer decoration object when formatting a single display value (currency, dates, truncated strings) or decorating a model for a specific view context — not for complex HTML (use ViewComponent) or business rules (keep those on the model). Presenters belong in `app/presenters/`, named after the model they decorate: `InvoicePresenter`.
-
-### 11) Fractal code quality
-At every level aim for:
-- domain-driven names
-- encapsulation
-- cohesion
-- symmetry of abstraction
-
-When a partial grows to contain meaningful conditional logic or is reused across three or more distinct contexts, evaluate whether a ViewComponent is warranted — creation sequence and pre-shipping checklist in `references/style-checklist.md`. Avoid ViewComponent for simple markup-only partials — the overhead is not worth it.
-
-### 12) Ruby consistency
-- Prefer new hash syntax.
-- Prefer single quotes when not interpolating.
-- Prefer positive `if` forms when the positive path is what matters.
-- Use `%w` and `%i` where they improve consistency.
-- Use `&&` and `||`, not `and` and `or`.
-
-## Token efficiency
-
-Every reference file costs tokens. Load nothing speculatively.
-
-- Load rule files **only** when you are actively building in that area. A migration-only ticket needs `database.md`; it does not need `views.md` or `callbacks.md`.
-- Load `references/style-guide.md` only for cross-cutting design questions, not as a warm-up for every task.
-- Load `references/examples.md` only when you need a concrete implementation pattern to decide; skip it when the pattern is already clear.
-- Load `references/style-checklist.md` once, at step 6 — not at the start.
-- Load `references/tdd-checklist.md` only at the Refactor phase or the flaky-spec gate — not before.
-- For pure formatting / linting tasks (no logic change), skip all rule files. Run the repo's detected lint command and present the diff. Do not load architecture or model rules.
-- When dispatching subagents (see below), each agent loads only its own relevant rules, not the full set.
-- Once a subagent's output has been consumed — folded into `files_changed`, the next agent's input, or review-agent's grounding — treat its full transcript as safe to drop. This applies at every phase and ticket size, not only the Full-feature midpoint (Subagent dispatch → Compaction checkpoint, below).
-
-All rule files live at `references/rules/<name>.md`. Load only what you are actively building in — each file costs tokens.
+All rule files live at `references/rules/<name>.md`. Load only what you are actively building in — each file costs tokens. Load the cited section, not the whole file, where a section is cited.
 
 | Task type | Load these rules |
 |---|---|
@@ -216,323 +146,22 @@ All rule files live at `references/rules/<name>.md`. Load only what you are acti
 | New class / concern / module | `architecture.md`, `abstractions.md`, `naming.md` |
 | Full feature | Dispatch subagents; each loads its own |
 
-## Spec stub
+Other references, load only when they apply: `style-guide.md` (cross-cutting design questions), `examples.md` (a concrete implementation pattern would help), `request-template.md` (the user needs help supplying better ticket input), `source-code-writing-guide.md` (nuance from the original guide is needed).
 
-Before Scope gate or any implementation, every ticket gets a spec stub — one file, two layers. This runs unconditionally, even for a one-line fix: it is cheap to write, and it is where drift gets caught before code does.
+## Output contract
 
-**File:** `.rails-do/<ticket-key>/spec.md` (ticket-key = Jira key if given, else a short slug minted once and reused for the life of the ticket). Before minting a new key, check `.rails-do/` for an existing stub whose title or Problem already matches this ticket — reuse it rather than starting a duplicate. If `.rails-do/` is not already in `.gitignore`, add it — this is working state, not a deliverable.
-
-**Layer 1 — Intent (locked once approved):**
-```
-# Spec: <ticket-key> — <one-line title>
-
-## Problem
-<what is broken or missing, and why it matters>
-
-## Desired behavior
-<what happens after the change>
-
-## Acceptance criteria
-- <bullet>
-
-## Scope
-In: <bullet>
-Out: <bullet>
-
-## Constraints
-<performance, security, compatibility, API contract — or "none stated">
-
-## Open questions
-[NEEDS CLARIFICATION: <specific question>]
-
-## Amendments
-(none)
-```
-
-**Layer 2 — Grounding:**
-```
-## Grounding
-- Existing pattern: <file:line of the closest analogous code, from a grep pass>
-- Rule files: <task-type row this ticket maps to, from the loading table above>
-- Test coverage: <spec files already covering this area, or "none found">
-- Layers touched: <migration/model/service/policy/controller/graphql/job/view>
-- Dispatch plan: <inline | dispatch — N layers, in this order: ...> (only for 3+ layers; state before Scope gate runs)
-```
-Grounding carries facts, not intent — the only layer that updates freely, with no approval, for the life of the ticket. (Layer 1 does not; see Amendment rule.)
-
-### Drafting
-
-0. Say one line before starting — e.g. "Drafting spec stub for `<ticket-key>`." — one line, not a play-by-play, so the user knows this step began.
-1. Draft both layers immediately from the ticket text and prior context, plus your own inline research — before asking the user anything. Budget that research: at most 5 greps and 1 file read to find the closest analogous pattern and its spec.
-   - Stay inline — don't dispatch a subagent for this. If the budget runs out before Grounding resolves, write what you have and tag the gap in Open questions (`[NEEDS CLARIFICATION: couldn't locate an existing pattern for X — where should this live?]`) instead of escalating research. A subagent for deeper research belongs to implementation, after Scope gate, once the ticket has cleared the 3+ layer threshold — not to drafting the stub.
-2. Tag genuine gaps inline as `[NEEDS CLARIFICATION: <question>]` under Open questions. Do not ask a blanket set of questions; ask only what the draft could not resolve on its own.
-3. Show the drafted `spec.md`. The user edits it directly or answers the tags in place.
-4. **Gate:** every `[NEEDS CLARIFICATION]` tag must be resolved and Layer 1 explicitly approved — an edited file handed back, or an explicit "approved" / "looks good, proceed" — before any gate below runs. Silence or moving to another topic is not approval. Do not invent scope beyond what the approved spec states — one clearly stated assumption is acceptable; multiple silent assumptions are not.
-
-### Resume
-
-If `.rails-do/<ticket-key>/spec.md` already exists for this ticket:
-1. Read it first. If Layer 1 isn't approved yet, resume Drafting from the open `[NEEDS CLARIFICATION]` tags.
-2. If Layer 1 is approved, skip Drafting. Run `git status` / `git diff` for uncommitted work already written, and match any changed files against the Dispatch order (Subagent dispatch, below) to find which layer to resume from.
-3. If nothing is uncommitted and no dispatch has happened yet, start at Implementation workflow step 1.
-
-**WRONG** — never do this:
-```
-Ticket already has an approved .rails-do/<key>/spec.md — draft a new one anyway, ignoring it.
-```
-
-**CORRECT:**
-```
-Read .rails-do/<key>/spec.md → Layer 1 approved → git status shows the model file already
-changed → resume at services, the next Dispatch order step after models — not from scratch.
-```
-
-### Amendment rule
-
-Layer 1 is locked once approved. No silent edits.
-
-When scope, behavior, or acceptance criteria change mid-implementation:
-1. Do not rewrite Layer 1 in place.
-2. Append a dated entry under Amendments: what changed, why, what it replaces.
-3. Get the same explicit approval as the original spec (see Drafting gate above) before continuing implementation.
-
-Layer 2 is exempt — see Grounding above.
-
-### Voice
-
-Spec and amendment text is terse and concrete, not narrated:
-- Fact or decision first — no lead-in ("I'll now...", "Let's...", "As requested...").
-- No restating the user's ask before answering it, no closing recap.
-- No hedging filler ("just," "simply," "basically") and no filler adjectives ("robust," "comprehensive," "seamless") — if a word carries no information, cut it.
-- Bullets for structured facts (criteria, scope, amendments), not paragraphs.
-
-## Subagent dispatch
-
-When a ticket touches **three or more distinct layers**, dispatch specialist subagents instead of implementing everything in one context. Each subagent starts fresh, loads only its layer's rules, and returns a focused diff. One dispatch round — one layer's specialist, or one dependency-ordered step when implementing inline without subagents — is a **phase**; other mentions of "phase" elsewhere in this skill mean the same thing.
-
-**When to dispatch vs. implement inline:**
-
-| Ticket scope | Approach |
-|---|---|
-| One or two files, single layer | Implement inline |
-| 3+ layers (e.g., migration + model + spec + controller) | Dispatch subagents |
-| Full feature from ticket to green tests | Always dispatch |
-
-**Dispatch order** (dependency-first — never dispatch out of order):
-
-```
-migrations → models → services → query objects → policies → controllers → graphql → jobs → mailers → views + specs
-```
-
-**Required parallel pairs (dispatch in the same Agent tool call block — never sequentially):**
-- migration-agent completes → dispatch model-agent + rspec-agent together
-- model-agent completes → dispatch policy-agent + controller-agent together
-
-**Compaction checkpoint:** on a Full-feature ticket, after the model-agent + rspec-agent pair completes and before dispatching policy-agent + controller-agent, run `/compact focus on <ticket-key>: keep the approved spec, Grounding, and files_changed so far; drop full subagent transcripts.` This is the natural midpoint of the Dispatch order, so the second half of a long chain doesn't carry the full first half's transcripts.
-
-**Specialist subagent roles and what they load:**
-
-| Subagent | Owns | Loads |
-|---|---|---|
-| migration-agent | Schema changes, indexes, FK constraints | `database.md` |
-| model-agent | ActiveRecord model, associations, scopes, concerns + its own specs | `models.md`, `callbacks.md`, `testing.md` |
-| service-agent | Services in `app/services/` for multi-model orchestration with no natural model home + its own specs. Try concern + PORO first (House rule #3). | `models.md`, `naming.md`, `testing.md` |
-| policy-agent | Pundit policy and scope + its own specs | `policies.md` |
-| controller-agent | HTTP orchestration, strong params + its own specs | `controllers.md`, `testing.md` |
-| graphql-agent | Resolvers, types, mutations, subscriptions + their specs. Regenerate schema after implementing (see Pre-flight checklist). | `controllers.md`, `models.md`, `testing.md`, `app/graphql/AGENTS.md` |
-| view-agent | ERB, Turbo primitives, Stimulus, ViewComponent + their specs | `views.md`, `testing.md` |
-| job-agent | Background jobs, idempotency, retry + its own specs | `performance.md`, `testing.md` |
-| query-object-agent | Complex query objects in `app/queries/` + their specs | `models.md`, `testing.md` |
-| mailer-agent | ActionMailer mailers + their specs | `testing.md` |
-| rspec-agent | Cross-cutting integration specs only (not layer specs — each specialist owns those) | `testing.md` |
-| review-agent | Adversarially checks acceptance_criteria (blocking), gaps, and excess/simplicity (advisory) against the implementation. Spawned once per ticket, after all phases complete — not after each one individually — including inline tickets under the 3-layer threshold, not just dispatched ones. Full contract in "How to dispatch" below. | `testing.md` |
-
-**Project CLAUDE.md — load alongside rule files:**
-Each specialist must also read the project's nested CLAUDE.md for its layer before implementing:
-
-| Subagent | Also read |
-|---|---|
-| migration-agent | `db/CLAUDE.md` |
-| model-agent | `app/models/CLAUDE.md` |
-| graphql-agent | `app/graphql/CLAUDE.md`, `app/graphql/AGENTS.md` |
-| job-agent | `app/jobs/CLAUDE.md` |
-| rspec-agent | `spec/CLAUDE.md` |
-
-**How to dispatch:**
-1. Restate the ticket in domain language (brief).
-2. Identify which specialists are needed (see roles table above).
-3. For each specialist, call the **Agent tool** with the subagent contract as the prompt. Feed the previous layer's output only when the task requires it (e.g., migration output feeds model context).
-4. Run the repo's detected lint command and detected test command (with its coverage-skip convention, if any) against all changed spec files, and paste both outputs — review-agent's verdict is checked against this, so it must be current before dispatching review-agent.
-5. Dispatch one `review-agent`, once per ticket — after every specialist phase in this dispatch chain has completed, not after each one individually — with the current spec.md Layer 1 (post-Amendment) as `acceptance_criteria`, spec.md Layer 2 as `grounding`, the `files_changed` list from every implementation agent in the chain, and the output from step 4 as `lint_and_test_output`. Gate completion on `failed_criteria.length === 0`, not on the `verdict` string.
-
-   **If `failed_criteria` is non-empty (`verdict: "fail"`):**
-   1. Surface `failed_criteria` to the user
-   2. For each failed criterion, re-dispatch a fresh-context fix to the specialist role that owns the layer it traces to, passing `failed_criteria` and that file's current contents — not the original transcript, which may already be gone past the Compaction checkpoint — and re-check any later-layer code built against what changed
-   3. Re-run step 4, then re-dispatch `review-agent` with the same `acceptance_criteria` and updated `files_changed`
-   Maximum 2 retry cycles — capped lower than the Stop hook's 3, because each cycle here means changing code, not just re-running a check. On the 3rd failure, escalate as a blocker:
-   > **Blocked — review-agent:** [list failed_criteria] / [file:line where each assertion fails, from test output] / [what was attempted in each retry cycle] / [needs user decision]
-
-   **When `failed_criteria` is empty:** surface `gaps` and `excess_scope` to the user as advisory items before proceeding to the completion gate — silence on these means proceeding with the finding accepted as-is. Remove any `excess_comments` findings from the diff first — no separate approval needed; they surface in the pre-commit `git diff --cached` review like any other change.
-
-**If subagents aren't available:** implement in a single linear pass in the same dependency order. Load only the rule files for the layer you're actively writing — not all at once.
-
-## Scope gate
-
-Run this when a ticket touches 3 or more of the stages listed in Dispatch order (Subagent dispatch, above) and no `+Nk` token budget directive was given in the session:
-
-1. Count the distinct layers the ticket touches.
-2. Ask:
-   > "This ticket spans [N] layers and will dispatch [N] agents. Proceed with full depth, or focus on [highest-risk layer]?"
-3. If the user says proceed, or a `+Nk` directive is present, dispatch normally.
-4. **Budget-aware default (no `+Nk` directive, user says proceed without specifying depth):** Cap at the 3 highest-risk layers. If Required parallel pairs (Subagent dispatch, above) calls for two of those layers together, both count as one pair — never split a mandatory pair to fit the cap. rspec-agent and review-agent run regardless and aren't part of this count. State which layers were sampled and which were skipped. The user can re-invoke with a `+Nk` directive to lift the cap.
-
-## Implementation workflow
-1. Restate the ticket in domain language. Confirm it matches the approved spec stub's Layer 1 — if it doesn't, stop and log an Amendment (see Spec stub → Amendment rule) before continuing. Refresh the stub's Grounding layer as facts change; no approval needed for that layer.
-2. Identify the smallest set of files that should change. When multiple layers are involved, build in the same dependency order as Dispatch order (Subagent dispatch, above). Do not write a controller method that calls a model API that does not yet exist. Lay the foundation before the walls.
-3. **Grep for existing patterns** — before proposing architecture, search for analogous
-   models, concerns, services, or query objects already in the codebase. Mirror the
-   local pattern unless it clearly conflicts with the style guide.
-   Also grep for N+1 risks in the files you're changing: any `.each` over an AR collection
-   that accesses an association without `includes`, `preload`, or `eager_load`. In Rails 8+,
-   prefer `strict_loading` on associations that must never be lazy-loaded. Use EXPLAIN ANALYZE
-   in development to verify query plans for any non-trivial scope you introduce.
-4. Decide the primary public API first — keep it Rails-native and easy to call. If the feature involves real-time or partial page updates, pick the right Turbo primitive — see `references/style-guide.md` (Turbo primitives).
-5. **Write a failing spec first (TDD — Red).** Describe the behavior the ticket requires. A good spec has: one assertion per example, a descriptive name, clear Arrange-Act-Assert structure, and covers the happy path plus meaningful edge cases. Then make the smallest change to pass it (Green). Then refactor.
-
-   **TDD phases — hard gates:**
-
-   **Red — write the failing spec first:**
-   1. Write or update the spec
-   2. Run the repo's detected test command against `<spec_file>` (with its detected coverage-skip convention applied automatically)
-   3. **Paste the test output into your response** — the gate passes only when the output is visible and shows an assertion failure (not a load error)
-   4. Append `<spec_file>` to `.rails-do/<ticket-key>/tdd-red-expected` (one path per line, create if missing) — tells the Stop hook this failure is intentional, not a stop-worthy problem
-   5. **Gate: do not write implementation code until failure output appears in the response**
-
-   **Green — minimum change to pass:**
-   1. Write the smallest implementation that makes the spec pass
-   2. Run the repo's detected test command against `<spec_file>` (with its detected coverage-skip convention applied automatically)
-   3. **Paste the test output into your response** — the gate passes only when output shows all examples passing
-   4. Remove `<spec_file>` from `.rails-do/<ticket-key>/tdd-red-expected` if present — the Stop hook resumes enforcing it
-   5. **Gate: do not advance until passing output appears in the response**
-   6. Stop — do not add more than what makes it green
-
-   **Refactor — clean while green:**
-   1. Improve naming, structure, or clarity
-   2. Run the repo's detected test command against `<spec_file>` (with its detected coverage-skip convention applied automatically) after each change
-   3. **Paste the test output after each change** — revert immediately if any example goes red
-   4. **Gate: must stay green throughout — revert and retry if it goes red**
-
-   **WRONG** — never do this:
-   ```
-   Write implementation code. Then write specs to match what was built.
-   ```
-
-   **CORRECT:**
-   ```
-   Write spec → run the repo's detected test command → see failure → write minimum code →
-   run the repo's detected test command → see passing → refactor → still passing
-   ```
-
-   **Refactoring rules (do not skip these):**
-   - Never refactor a failing test — Green first, then refactor.
-   - Make one small change at a time.
-   - Run the full spec after every change.
-   - If tests go red, undo the change immediately.
-
-   Refactor-trigger list, matching refactoring moves, and the flaky-spec gate checklist are in `references/tdd-checklist.md` — read it now; this step isn't done until the flaky-spec gate there has been checked.
-
-6. Review the result against `references/style-checklist.md`. Before presenting work as complete, run what the repo uses:
-   - **Style:** the repo's detected lint command (standardrb or rubocop — same detection the Stop hook uses).
-   - **Tests:** the repo's detected test command against `<changed_spec_files>`, with its detected coverage-skip convention applied if one was found.
-   - **Security:** `bundle exec brakeman --no-pager` if brakeman is present; skip otherwise.
-   Report failures inline. Only block completion for checks that the repo's CI pipeline enforces — flag others as follow-up nits.
-
-   **If this ticket was under the 3-layer dispatch threshold (implemented inline, no specialist dispatch):** dispatch `review-agent` here — this is the only adversarial check these tickets get, since "Subagent dispatch" → "How to dispatch" only covers dispatched tickets. Same contract, same gate: `failed_criteria.length === 0` before continuing, `gaps`/`excess_scope` surfaced advisory, `excess_comments` removed from the diff before it's shown.
-
-   **Completion gate — a phase is done only when both outputs are pasted into the response:**
-   ```bash
-   <detected lint command>
-   <detected test command> <the_spec_file_changed>
-   ```
-
-   **WRONG** — never do this:
-   ```
-   "Phase complete — implementation verified."
-   ```
-
-   **CORRECT** — paste actual output:
-   ```
-   $ bundle exec standardrb --format progress
-   .....
-   $ bundle exec rspec spec/models/covered_life_spec.rb
-   3 examples, 0 failures
-   ```
-
-7. **Git rule:** After verification passes, run `git diff --cached`, propose a commit message, and wait for explicit user YES (see Hard rules).
-
-   **WRONG** — never do this:
-   ```
-   Deploy a Commit subagent that runs: git add -A && git commit -m "..."
-   ```
-
-   **CORRECT:**
-   ```
-   Show git diff --cached output → propose message → wait for user YES → then commit
-   ```
-
-   **Archiving:** once the commit lands, move `.rails-do/<ticket-key>/` to `.rails-do/archive/<ticket-key>/` (see Spec stub for the file convention). Keeps the working directory to only in-flight tickets.
-
-## Default output contract
-When writing code or patches:
-- Lead with a short implementation summary.
-- Then show the files changed, patch, or code.
+- Lead with a short implementation summary, then the files changed, patch, or code.
 - Keep explanations brief and concrete.
-- If the ticket is underspecified, make the smallest reasonable assumption and state it once.
-- Do not apologize for choosing Rails-native patterns.
-
-## When to consult bundled references
-- Load the relevant `references/rules/*.md` file (see the task-type table under Token efficiency, above) when making area-specific decisions.
-- Read `references/style-guide.md` for a concise cross-cutting summary of architecture, naming, and design choices.
-- Read `references/style-checklist.md` before finalizing code.
-- Read `references/tdd-checklist.md` at the Refactor phase and before marking spec work done (flaky-spec gate).
-- Read `references/request-template.md` if the user needs help supplying better ticket or context input.
-- Read `references/examples.md` if a concrete implementation pattern would help.
-- Read `references/source-code-writing-guide.md` if nuance from the original guide is needed.
+- If underspecified, make the smallest reasonable assumption and state it once.
+- Don't apologize for choosing Rails-native patterns.
 
 ## Negative triggers
 Also not for non-Rails/non-Ruby work — unless the user explicitly asks to adapt the style guide's spirit rather than follow Rails patterns.
 
----
-
 ## Failure handling
 
-### Escalation protocol
+Surface to the user immediately — don't guess past a blocker — when a subagent can't finish, the plan contradicts the code, or a file/method that should exist doesn't. Format: `Blocked — [step]: [attempted] / [failed] / [needed]`.
 
-Surface to the user immediately — do not guess past a blocker — when:
-- A subagent cannot complete its task
-- The plan contradicts what the code actually is
-- A file or method that should exist does not
+**Pre-existing failures:** `git stash`, rerun the spec, compare failure counts. Failures present both before and after are pre-existing noise, not yours to fix. Unstash, investigate only what disappeared.
 
-(Repeated verification failure has its own format — see "How to dispatch" → review-agent's 3rd-failure escalation, above.)
-
-Format:
-> **Blocked — Phase [N]:** [what was attempted] / [what failed] / [what is needed to proceed]
-
-### Pre-existing failure detection
-
-When unexpected spec failures appear after a change:
-
-1. `git stash`
-2. Rerun the same spec file
-3. Compare failure counts
-
-Failures present both before and after stash are pre-existing noise — not ours to fix. Only failures that disappear after stash belong to this task. Unstash, then investigate only those.
-
-### Pre-flight before claiming any phase done
-
-- [ ] Targeted test output shown and green (repo's detected test command)
-- [ ] Lint output shown and clean (repo's detected lint command)
-- [ ] No new flaky spec patterns (checked against `references/tdd-checklist.md`)
-- [ ] review-agent dispatched with `failed_criteria` empty, `gaps`/`excess_scope` surfaced if present — only on the ticket's final phase (or its single phase, if implemented inline), not every intermediate phase
-- [ ] If any GraphQL files changed: `bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops` run and schema files staged
-- [ ] If proposing a commit: diff shown, message proposed, user has said YES
+**Before claiming any step done:** Step 4's lint and test output are pasted and green, `references/tdd-checklist.md`'s flaky-spec gate is checked, review-agent's `failed_criteria` is empty on the ticket's final step, and — if proposing a commit — the diff is shown and the user has said YES.

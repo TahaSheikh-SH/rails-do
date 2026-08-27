@@ -1,17 +1,18 @@
 # rails-do
 
-A Claude Code plugin that implements Ruby on Rails changes from a ticket, issue writeup, or bug report using a spec-driven workflow with hard TDD gates and dependency-ordered subagent dispatch.
+A Claude Code plugin that implements Ruby on Rails changes from a ticket, issue writeup, or bug report using a spec-driven workflow: clarify, plan, execute, verify.
 
 ## What it does
 
-- Drafts a two-layer spec stub (Intent + Grounding) before any code, with an amendment rule so scope changes never silently overwrite the approved intent.
+- Clarifies ambiguous requirements with the user, once, batched, before planning.
+- Drafts a two-layer plan file (Intent + Grounding) before any code, with an amendment rule so scope changes never silently overwrite the approved intent.
 - Enforces Red -> Green -> Refactor with hard gates: no implementation before a failing spec, no advancing without pasted lint/test output.
 - Dispatches specialist subagents in dependency order (migrations -> models -> services -> ... -> views) once a ticket crosses a 3-layer threshold, with a scope gate for anything larger.
-- Ships a Stop hook that mechanically blocks turn-end if the repo's lint or mapped test command fails, for any Rails layer with a 1:1 file-to-spec convention. The hook auto-detects standardrb vs rubocop and rspec vs minitest per repo — nothing to configure. When detection is genuinely ambiguous (not "no such tool," but "can't tell which one"), the hook blocks and asks a question instead of guessing; the answer gets written to `.rails-do/toolchain-override` so it's only asked once per repo. A repo whose spec layout doesn't mirror app layers 1:1 gets a non-blocking informational note instead, since there's no question to ask there. Controllers, GraphQL, views, and migrations aren't covered by the hook and rely on the workflow's own manual gates instead. The hook won't block on a spec you've deliberately left failing mid-TDD-Red — see the `tdd-red-expected` marker in the SKILL.md TDD section.
+- Verifies before calling a ticket done: runs the repo's lint and test commands and pastes the output.
 
 ## Prerequisites
 
-- A Ruby on Rails app. The Stop hook auto-detects standardrb vs rubocop, rspec vs minitest, and a SimpleCov coverage-skip convention if one exists — no config needed. If detection can't confidently resolve a choice, the hook blocks once and asks which one this repo uses; the answer persists in `.rails-do/toolchain-override` so it isn't asked again.
+- A Ruby on Rails app. The skill asks once which lint and test commands this repo uses if it can't tell, and notes the answer in the plan file.
 - Claude Code with plugin support.
 
 ## Install
@@ -30,16 +31,16 @@ claude plugin marketplace add https://github.com/TahaSheikh-SH/rails-do
 claude plugin install rails-do@rails-do
 ```
 
-If the skill or hook doesn't show up in a session that was already running, run `/reload-plugins` or restart.
+If the skill doesn't show up in a session that was already running, run `/reload-plugins` or restart.
 
-Verify the install landed correctly with `claude plugin details rails-do@rails-do` — it should show `Skills (1) rails-do` and `Hooks (1) Stop`.
+Verify the install landed correctly with `claude plugin details rails-do@rails-do` — it should show `Skills (1) rails-do`.
 
 For local development, point `marketplace add` at a local path instead (e.g. `./rails-do` from the parent directory).
 
 ## House rules are opinions, not requirements
 
-The twelve House rules in [`SKILL.md`](plugins/rails-do/skills/rails-do/SKILL.md) (concern + PORO subsystem before a standalone service, thin controllers, presenter conventions, and so on) are one team's specific Rails conventions, shipped as-is. They are not configurable in this version. If your team's conventions differ, fork the House rules section and the accompanying `references/style-guide.md` / `references/style-checklist.md` (both under `plugins/rails-do/skills/rails-do/references/`) rather than fighting the gates — the spec-stub workflow, TDD gates, and subagent dispatch mechanics underneath are the reusable part.
+The twelve House rules in [`references/house-rules.md`](plugins/rails-do/skills/rails-do/references/house-rules.md) (concern + PORO subsystem before a standalone service, thin controllers, presenter conventions, and so on) are one team's specific Rails conventions, shipped as-is. They are not configurable in this version. If your team's conventions differ, fork the House rules file and the accompanying `references/style-guide.md` / `references/style-checklist.md` (both under `plugins/rails-do/skills/rails-do/references/`) rather than fighting the gates — the plan workflow, TDD gates, and subagent dispatch mechanics underneath are the reusable part.
 
 ## Scope
 
-Claude Code only, for now. The Stop hook and subagent dispatch rely on Claude-Code-specific mechanics (hooks, the Agent tool) with no equivalent on other platforms.
+Plain Markdown plus reference files — works wherever Agent Skills are supported, and uses subagents when the environment provides them. House rules and rule files assume a Ruby on Rails codebase.
