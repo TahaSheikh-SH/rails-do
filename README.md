@@ -39,7 +39,7 @@ For local development, point `marketplace add` at a local path instead (e.g. `./
 
 ## House rules are opinions, not requirements
 
-The twelve House rules in [`references/house-rules.md`](plugins/rails-do/skills/rails-do/references/house-rules.md) (concern + PORO subsystem before a standalone service, thin controllers, presenter conventions, and so on) are one team's specific Rails conventions, shipped as-is. They are not configurable in this version. If your team's conventions differ, fork the House rules file and the accompanying `references/style-guide.md` / `references/style-checklist.md` (both under `plugins/rails-do/skills/rails-do/references/`) rather than fighting the gates — the plan workflow, TDD gates, and subagent dispatch mechanics underneath are the reusable part.
+The twelve House rules in [`references/house-rules.md`](plugins/rails-do/skills/rails-do/references/house-rules.md) (concern + PORO subsystem before a standalone service, thin controllers, presenter conventions, and so on) are one team's specific Rails conventions, shipped as-is and not configurable in this version. If your team's conventions differ, fork the House rules file and the accompanying `references/style-guide.md` / `references/style-checklist.md` (both under `plugins/rails-do/skills/rails-do/references/`) rather than fighting the gates — the plan workflow, TDD gates, and subagent dispatch mechanics underneath are the reusable part.
 
 ## Scope
 

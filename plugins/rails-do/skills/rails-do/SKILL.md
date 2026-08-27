@@ -36,7 +36,7 @@ mention. If nothing is genuinely ambiguous, say so and go straight to the plan.
 
 ## Step 2 — Plan
 
-Every ticket gets a plan file before Step 3 — even a one-line fix. It's cheap to write, and it's where drift gets caught before code does.
+Every ticket gets a plan file before Step 3 — even a one-line fix. Cheap to write, catches drift before code does.
 
 **File:** `.rails-do/<ticket-key>/spec.md` (ticket-key = Jira key, else a short slug reused for the ticket's life). Check for an existing matching stub before minting a new key. Add `.rails-do/` to `.gitignore` if missing — working state, not a deliverable.
 
@@ -115,7 +115,7 @@ Before reporting done: run the repo's lint and test commands for the files
 you changed, paste the output. Either fails → not done. Can't tell which
 commands this repo uses → ask once, note the answer in the plan file.
 
-Also run `bundle exec brakeman --no-pager` if present. GraphQL files changed → regenerate the schema (`bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops`) and stage it. Review against `references/style-checklist.md` before calling it done.
+Run `bundle exec brakeman --no-pager` if present. GraphQL files changed → regenerate the schema (`bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops`) and stage it. Review against `references/style-checklist.md` before calling it done.
 
 ## House rules
 
@@ -146,7 +146,7 @@ All rule files live at `references/rules/<name>.md`. Load only what you are acti
 | New class / concern / module | `architecture.md`, `abstractions.md`, `naming.md` |
 | Full feature | Dispatch subagents; each loads its own |
 
-Other references, load only when they apply: `style-guide.md` (cross-cutting design questions), `examples.md` (a concrete implementation pattern would help), `request-template.md` (the user needs help supplying better ticket input), `source-code-writing-guide.md` (nuance from the original guide is needed).
+Other references, load only when they apply: `style-guide.md` (cross-cutting design questions), `examples.md` (a concrete pattern would help), `request-template.md` (better ticket input needed), `source-code-writing-guide.md` (extra nuance needed).
 
 ## Output contract
 
@@ -156,7 +156,7 @@ Other references, load only when they apply: `style-guide.md` (cross-cutting des
 - Don't apologize for choosing Rails-native patterns.
 
 ## Negative triggers
-Also not for non-Rails/non-Ruby work — unless the user explicitly asks to adapt the style guide's spirit rather than follow Rails patterns.
+Not for non-Rails/non-Ruby work — unless the user explicitly asks to adapt the style guide's spirit rather than follow Rails patterns.
 
 ## Failure handling
 
