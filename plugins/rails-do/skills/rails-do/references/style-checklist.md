@@ -52,6 +52,9 @@ Run this checklist before presenting code.
 Creation sequence: define slots → render children → add variants → write component tests → document the public API.
 Before shipping: slots documented, variants complete, tests passing, accessibility reviewed.
 
+## Comments
+- Strip any comment whose content is fully inferable from the code beneath it.
+
 ## Tests and explanation
 - Do tests describe behavior rather than implementation trivia?
 - Is the final explanation short and concrete?
