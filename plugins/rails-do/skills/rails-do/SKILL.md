@@ -24,7 +24,7 @@ metadata:
 
 **Ask first:** touching files outside the plan's stated scope; adding a gem dependency; changing CI/CD config.
 
-**Never:** run the test command with no file scope; write implementation before a spec fails for the right reason (assertion failure, not a load error); claim completion without pasting actual lint and test output; commit or push without explicit user approval; pass a subagent more than `goal_hint + acceptance_criteria + rails_rules + workflow + task`; edit `db/schema.rb` directly; add comments that restate the code.
+**Never:** run the test command with no file scope; write implementation before a spec fails for the right reason (assertion failure, not a load error); claim completion without pasting actual lint and test output; commit or push without explicit user approval; pass a subagent more than `goal_hint + acceptance_criteria + rails_rules + workflow + task`; edit `db/schema.rb` directly; add comments that restate the code; edit the tracked `.gitignore` to hide `.rails-do/` — use `.git/info/exclude` only.
 
 ## Step 1 — Clarify
 
@@ -38,7 +38,7 @@ mention. If nothing is genuinely ambiguous, say so and go straight to the plan.
 
 Every ticket gets a plan file before Step 3 — even a one-line fix. Cheap to write, catches drift before code does.
 
-**File:** `.rails-do/<ticket-key>/spec.md` (ticket-key = Jira key, else a short slug reused for the ticket's life). Check for an existing matching stub before minting a new key. Add `.rails-do/` to `.gitignore` if missing — working state, not a deliverable.
+**File:** `.rails-do/<ticket-key>/spec.md` (ticket-key = Jira key, else a short slug reused for the ticket's life). Check for an existing matching stub before minting a new key. Exclude `.rails-do/` via `.git/info/exclude`, never the tracked `.gitignore` — working state, not a deliverable.
 
 **Layer 1 — Intent (locked once approved):**
 ```
@@ -103,7 +103,7 @@ Read `blockers` first; not `'none'` → surface and stop. Partial failure (some 
 
 **TDD per slice:** Red — write/update spec, run, paste output; gate: assertion failure before implementing. Green — smallest change, run, paste output; gate: all passing, then stop. Refactor — improve while green, re-run each change, revert if red. See `references/tdd-checklist.md`.
 
-**review-agent:** once per ticket, after every slice, dispatched or inline alike. `{ acceptance_criteria, grounding, files_changed, lint_and_test_output }` → `{ verdict, failed_criteria, gaps, excess_comments, excess_scope }`. Gate on `failed_criteria.length === 0`. Non-empty: re-dispatch a fix to the owning specialist, re-run lint/test, re-check — max 2 retries, then escalate. Empty: surface `gaps`/`excess_scope` advisory, strip `excess_comments` from the diff first.
+**review-agent:** once per ticket, after every slice, dispatched or inline alike. `{ acceptance_criteria, grounding, files_changed, lint_and_test_output, style_checklist: references/style-checklist.md }` → `{ verdict, failed_criteria, style_gaps, gaps, excess_comments, excess_scope }`. Gate on `failed_criteria.length === 0`. Non-empty: re-dispatch a fix to the owning specialist, re-run lint/test, re-check — max 2 retries, then escalate. `style_gaps` non-empty: surface as a named, unresolved gap in the final report, don't ship past it silently. Empty otherwise: surface `gaps`/`excess_scope` advisory, strip `excess_comments` from the diff first.
 
 **Git rule:** after verification, `git diff --cached`, propose a commit message, wait for user YES — never a subagent running `git commit`.
 
@@ -115,7 +115,7 @@ Before reporting done: run the repo's lint and test commands for the files
 you changed, paste the output. Either fails → not done. Can't tell which
 commands this repo uses → ask once, note the answer in the plan file.
 
-Run `bundle exec brakeman --no-pager` if present. GraphQL files changed → regenerate the schema (`bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops`) and stage it. Review against `references/style-checklist.md` before calling it done.
+Run `bundle exec brakeman --no-pager` if present. GraphQL files changed → regenerate the schema (`bundle exec rails graphql:schema:idl && bundle exec rails graphql:schema:llm_ops`) and stage it. Style-checklist review already happened at review-agent's gate (Step 3) — don't re-check it here.
 
 ## House rules
 
@@ -131,7 +131,7 @@ planning.
 
 ## Rules reference
 
-All rule files live at `references/rules/<name>.md`. Load only what you are actively building in — each file costs tokens. Load the cited section, not the whole file, where a section is cited.
+All rule files live at `references/rules/<name>.md`. Load only what you are actively building in — each file costs tokens. Load the cited section, not the whole file, where a section is cited. `references/style-checklist.md` always loads and always gates review-agent, for any hand-authored change — skip only for machine-generated output (migrations, `schema.rb`, GraphQL schema dumps).
 
 | Task type | Load these rules |
 |---|---|
